@@ -1685,8 +1685,69 @@ fn test_foo() { // ???
 	assert pex_file.get_string(ins[0].args[0].to_string_id()) == "::temp1"
 	assert ins[0].args[1].to_integer() == 1
 	assert ins[0].args[2].to_integer() == 2
-	
+
 	assert ins[1].op == pex.OpCode.assign
 	assert pex_file.get_string(ins[1].args[0].to_string_id()) == "n"
 	assert pex_file.get_string(ins[1].args[1].to_string_id()) == "::temp1"
+}
+
+fn test_string_escape_quote() {
+	pex_file := compile('string s = "He said: \\"hi\\""')
+	assert pex_file.string_table.contains('He said: "hi"'), 'escaped quote not decoded'
+}
+
+fn test_string_escape_newline() {
+	pex_file := compile('string s = "line1\\nline2"')
+	assert pex_file.string_table.contains('line1\nline2'), 'escaped newline not decoded'
+}
+
+fn test_string_escape_bug_report() {
+	pex_file := compile('string s = "This is a \\"Test\\" \\nWith a new Line! "')
+	assert pex_file.string_table.contains('This is a "Test" \nWith a new Line! '), 'bug-report string not decoded'
+}
+
+fn test_string_escape_combined() {
+	pex_file := compile('string s = "First sentence.\\nSecond \\"quoted\\" sentence."')
+	assert pex_file.string_table.contains('First sentence.\nSecond "quoted" sentence.'), 'combined escapes not decoded'
+}
+
+fn test_string_escape_multiple_newlines() {
+	pex_file := compile('string s = "a\\n\\n\\nb"')
+	assert pex_file.string_table.contains('a\n\n\nb'), 'multiple newlines not decoded'
+}
+
+fn test_string_no_escape_unchanged() {
+	pex_file := compile('string s = "no escape here"')
+	assert pex_file.string_table.contains('no escape here'), 'plain string missing from table'
+}
+
+fn test_string_escape_backslash() {
+	// \\ -> a single backslash; the common case for Windows paths in mods.
+	pex_file := compile('string s = "C:\\\\Temp\\\\file"')
+	assert pex_file.string_table.contains('C:\\Temp\\file'), 'escaped backslash not decoded'
+}
+
+fn test_string_escape_tab() {
+	pex_file := compile('string s = "a\\tb"')
+	assert pex_file.string_table.contains('a\tb'), 'escaped tab not decoded'
+}
+
+fn test_string_physical_newline() {
+	// Physical line breaks placed in the source (not via backslash)
+	// are kept in the string; CRLF is normalized to a single LF.
+	lf := compile('string s = "AAfoo\nBBbar"')
+	assert lf.string_table.contains('AAfoo\nBBbar'), 'physical LF not kept'
+	crlf := compile('string s = "CCfoo\r\nDDbar"')
+	assert crlf.string_table.contains('CCfoo\nDDbar'), 'physical CRLF not normalized to LF'
+}
+
+fn test_string_escape_matrix() {
+	// Distinct prefix/suffix per variant so a substring match can't
+	// accidentally satisfy another variant.
+	//   s1: \n  -> <LF>              (escape)
+	//   s2: \\n -> backslash + 'n'   (escaped backslash)
+	pex_file := compile('string s1 = "AA111111111foo' + '\\' + 'n        barBB"\n' +
+		'string s2 = "CC111111111foo' + '\\' + '\\' + 'n        barDD"')
+	assert pex_file.string_table.contains('AA111111111foo\n        barBB'), 's1 mismatch'
+	assert pex_file.string_table.contains('CC111111111foo\\n        barDD'), 's2 mismatch'
 }

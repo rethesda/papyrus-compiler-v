@@ -5,12 +5,23 @@
 - Added support for multiple output directories - you can now specify multiple `-o` flags to copy compiled .pex files to multiple locations. #18
 - Added Nix flake (`flake.nix`) — the compiler can now be built and run as a Nix package. #15
 - Added `-no-debug-info` flag to exclude source line numbers and modification time from compiled .pex files. Debug info is included by default.
+- A string literal may now span multiple source lines: a line break placed directly inside `"..."` is kept as a newline in the resulting string. Both Unix (`LF`) and Windows (`CRLF`) line endings are accepted and stored as a single newline, so the string content is the same regardless of the source file's line-ending style.
 
 ### Improvements
 
 - Generated scripts now include real source line numbers in the debug info.
 - The `modificationTime` field in generated scripts is now set to the source file's last modification time instead of a fixed placeholder.
 - Updated required V compiler version to [0.5.1](https://github.com/vlang/v/releases/tag/0.5.1) (previously `weekly.2025.48`).
+
+### Fixes
+
+- String literals now support C-style escape sequences inside double-quoted strings:
+  - `\"` produces a literal double quote (so `"He said: \"hi\""` becomes the string `He said: "hi"`).
+  - `\n` produces a newline.
+  - `\t` produces a tab.
+  - `\\` produces a single backslash (so `"C:\\Temp"` becomes the string `C:\Temp`, the common Windows-path form used throughout Skyrim mods).
+  - Any other `\X` sequence (for example `\r`, `\0`, `\'`, `\x`) is now reported as a scanner error.
+- Strings must be written with double quotes. A single quote is no longer accepted as a string delimiter; it now produces a clear `invalid character` error instead of being silently treated as the start of a string.
 
 ### CI/CD
 

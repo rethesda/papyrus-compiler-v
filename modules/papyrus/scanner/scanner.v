@@ -6,7 +6,6 @@ import papyrus.token
 import papyrus.util
 import papyrus.errors
 
-const single_quote = `\'`
 const double_quote = `"`
 const b_lf = 10
 const b_cr = 13
@@ -106,7 +105,6 @@ fn (mut s Scanner) text_scan() token.Token {
 		}
 
 		match c {
-			`\'`, 
 			`"` {
 				ident_string := s.ident_string()
 				return s.new_token(.string, ident_string, ident_string.len + 2) // + two quotes
@@ -410,84 +408,76 @@ fn (mut s Scanner) ident_number() string {
 
 @[direct_array_access]
 fn (mut s Scanner) ident_string() string {
-	
-	q := s.text[s.pos]
-	
-	if q != single_quote && q != double_quote {
+
+	if s.text[s.pos] != double_quote {
 		s.error('first quote not found')
 		return ''
 	}
 
-	mut quote := single_quote
-
-	if q == single_quote {
-		quote = single_quote
-	} 
-	else {
-		quote = double_quote
-	}
-	
-	mut n_cr_chars := 0
-	mut start := s.pos + 1
-	
-	slash := `\\`
+	// Most string literals are short; pre-sizing avoids the first few reallocations.
+	mut result := []u8{cap: 32}
 
 	for {
 		s.pos++
 
 		if s.pos >= s.text.len {
 			s.error('unfinished string literal')
-			break
+			return ''
 		}
 
 		c := s.text[s.pos]
-		prevc := s.text[s.pos - 1]
 
-		if c == quote && (prevc != slash || (prevc == slash && s.text[s.pos - 2] == slash)) {
+		if c == double_quote {
 			s.pos++
 			break
 		}
+
+		// Physical line breaks placed in the source are kept in the
+		// resulting string. CRLF is normalized to a single LF (the CR
+		// is dropped), so string content is independent of the file's
+		// line-ending style. Line numbers are tracked on the LF.
 		if c == `\r` {
-			n_cr_chars++
+			continue
 		}
 		if c == `\n` {
+			result << `\n`
 			s.inc_line_number()
+			continue
 		}
+
+		if c == `\\` {
+			s.pos++
+			if s.pos >= s.text.len {
+				s.error('unfinished string literal')
+				return ''
+			}
+			next := s.text[s.pos]
+
+			match next {
+				`\\` {
+					result << `\\`
+				}
+				`"` {
+					result << `"`
+				}
+				`n` {
+					result << `\n`
+				}
+				`t` {
+					result << `\t`
+				}
+				else {
+					s.error('unknown escape sequence in string literal: \\${next.ascii_str()}')
+				}
+			}
+
+			continue
+		}
+
+		result << c
 	}
 
-	mut lit := ''
-	mut end := s.pos - 1
-
-	if start <= s.pos {
-		mut string_so_far := s.text[start..end]
-		if n_cr_chars > 0 {
-			string_so_far = string_so_far.replace('\r', '')
-		}
-		if string_so_far.contains('\\\n') {
-			lit = trim_slash_line_break(string_so_far)
-		} else {
-			lit = string_so_far
-		}
-	}
-
-	return lit
-}
-
-fn trim_slash_line_break(s string) string {
-	mut start := 0
-	mut ret_str := s
-	for {
-		idx := ret_str.index_after('\\\n', start) or {
-			util.compiler_error(msg: "index_after `\\n`; ${err}", phase: "scanner", file: @FILE, func: @FN, line: @LINE)
-		}
-		if idx != -1 {
-			ret_str = ret_str[..idx] + ret_str[idx + 2..].trim_left(' \n\t\v\f\r')
-			start = idx
-		} else {
-			break
-		}
-	}
-	return ret_str
+	return result.bytestr()
 }
 
 @[direct_array_access]
